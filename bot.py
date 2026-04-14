@@ -1,118 +1,204 @@
+#!/usr/bin/env python3
 import os
-from telegram import Bot
-from apscheduler.schedulers.blocking import BlockingScheduler
+import asyncio
+import random
+import logging
 from datetime import datetime
 import pytz
+import requests
 
-BOT_TOKEN = os.getenv("7678173969:AAEUvVsRqbsHV-oUeky54CVytf_9nU9Fi5c")
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+# ==========================
+# CONFIG
+# ==========================
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+AUTHORIZED_USER_ID = int(os.getenv("AUTHORIZED_USER_ID", "0"))
+
+# 2 CHANNEL (SUDAH DITAMBAHKAN)
 CHANNELS = [
-    "-1003142698012",
-    "-1002782196938"
+    "-1002605110502",
+    "-1003056662193"
 ]
 
-bot = Bot(token=BOT_TOKEN)
+JKT = pytz.timezone("Asia/Jakarta")
 
-messages = {
-    "Monday": """🌅 Good Morning Traders! Happy Monday!
+# API harga GOLD (lebih stabil)
+GOLD_API = "https://api.gold-api.com/price/XAUUSD"
 
-Hari baru, minggu baru, peluang baru di market! 📈
-Ingat, trader sukses bukan yang selalu profit, tapi yang konsisten dengan disiplin dan manajemen risiko.
+# ==========================
+# LOGGING
+# ==========================
 
-Hari ini fokus kita:
-✅ Analisa sebelum entry
-✅ Jangan FOMO
-✅ Ikuti trading plan
-
-Market selalu memberi peluang bagi yang sabar.
-Mari mulai minggu ini dengan mindset professional trader 💪
-
-Semoga hari ini penuh pips! 🔥
-Let's catch the market together! 🚀""",
-
-    "Tuesday": """🌤 Selamat Pagi Trader Hebat! Happy Tuesday!
-
-Market sudah bergerak sejak dini hari, dan tugas kita bukan mengejar market… tapi menunggu setup terbaik 🎯
-
-Reminder pagi ini:
-📊 Ikuti analisa
-📉 Jangan overtrade
-🧠 Trading pakai logika, bukan emosi
-
-Trader profesional tahu kapan masuk market dan kapan menunggu.
-
-Semoga hari ini kita diberikan setup yang clean dan profit maksimal 💰📈""",
-
-    "Wednesday": """🌅 Good Morning Traders! Happy Wednesday!
-
-Sudah pertengahan minggu! 🔥
-Market biasanya mulai menunjukkan arah yang lebih jelas.
-
-Tips mentor pagi ini:
-📍 Fokus pada key level
-📍 Tunggu konfirmasi sebelum entry
-📍 Risk kecil, peluang besar
-
-Ingat, 1 trade bagus lebih baik daripada 10 trade terburu-buru.
-
-Tetap disiplin dan nikmati proses menjadi trader yang konsisten 💪📊""",
-
-    "Thursday": """☀️ Selamat Pagi Traders! Happy Thursday!
-
-Biasanya menjelang akhir minggu, market mulai memberikan pergerakan yang menarik 📈
-
-Checklist trader pagi ini:
-🔎 Analisa market structure
-📊 Perhatikan news penting
-⚖️ Jaga risk management
-
-Jangan lupa:
-Profit besar datang dari kesabaran dan strategi yang tepat.
-
-Semoga hari ini kita bisa menangkap momentum terbaik di market 🚀💰""",
-
-    "Friday": """🌅 Good Morning Traders! Happy Friday!
-
-Hari terakhir trading minggu ini! 🔥
-Fokus kita hari ini bukan hanya profit, tapi menutup minggu dengan disiplin.
-
-Reminder dari mentor:
-📉 Hindari revenge trading
-📊 Ambil setup yang jelas saja
-💡 Protect profit minggu ini
-
-Trader profesional tahu kapan mengunci profit dan berhenti trading.
-
-Semoga closing minggu ini penuh pips! 💰
-See you at the top traders! 🚀"""
-}
-
-
-def send_greeting():
-    tz = pytz.timezone("Asia/Jakarta")
-    today = datetime.now(tz).strftime("%A")
-
-    if today in messages:
-        text = messages[today]
-
-        for channel in CHANNELS:
-            try:
-                bot.send_message(chat_id=channel, text=text)
-                print(f"Message sent to {channel}")
-            except Exception as e:
-                print(f"Failed sending to {channel}: {e}")
-
-
-scheduler = BlockingScheduler(timezone="Asia/Jakarta")
-
-scheduler.add_job(
-    send_greeting,
-    "cron",
-    day_of_week="mon-fri",
-    hour=7,
-    minute=0
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-print("Bot running... Greeting will be sent every weekday at 07:00 WIB")
+logger = logging.getLogger("SIGNAL-BOT")
 
-scheduler.start()
+# ==========================
+# AMBIL HARGA (ANTI ERROR)
+# ==========================
+
+def get_price():
+    try:
+        res = requests.get(GOLD_API, timeout=10)
+        data = res.json()
+        return float(data["price"])
+    except Exception as e:
+        logger.warning(f"Gagal ambil harga: {e}")
+        return None
+
+# ==========================
+# GENERATE SIGNAL
+# ==========================
+
+def generate_signal(price):
+
+    now = datetime.now(JKT).strftime("%Y-%m-%d %H:%M:%S")
+
+    if not price:
+        return f"""
+🤖 AI MARKET SIGNAL
+
+Time : {now} WIB
+
+⚠️ Harga tidak tersedia saat ini
+Silakan tunggu update berikutnya
+"""
+
+    direction = random.choice(["BUY", "SELL"])
+    pip = 0.1
+
+    if direction == "BUY":
+        tp1 = round(price + 70*pip,2)
+        tp2 = round(price + 100*pip,2)
+        sl = round(price - 45*pip,2)
+    else:
+        tp1 = round(price - 70*pip,2)
+        tp2 = round(price - 100*pip,2)
+        sl = round(price + 45*pip,2)
+
+    return f"""
+🤖 AI MARKET SIGNAL
+
+Instrument : XAU/USD (GOLD)
+Time : {now} WIB
+
+Direction : {direction}
+
+Entry Price : {price}
+
+Take Profit
+TP1 : {tp1}
+TP2 : {tp2}
+
+Stop Loss
+SL : {sl}
+
+━━━━━━━━━━━━━━━
+⚠️ Gunakan money management yang baik
+"""
+
+# ==========================
+# KIRIM SIGNAL
+# ==========================
+
+async def send_signal(app):
+
+    price = get_price()
+    msg = generate_signal(price)
+
+    for ch in CHANNELS:
+        try:
+            await app.bot.send_message(chat_id=ch, text=msg)
+            logger.info(f"Signal terkirim ke {ch}")
+        except Exception as e:
+            logger.error(f"Gagal kirim ke {ch}: {e}")
+
+# ==========================
+# SCHEDULER FIX (ANTI MISS)
+# ==========================
+
+async def scheduler(app):
+
+    logger.info("Scheduler aktif")
+
+    last_sent_hour = -1
+
+    while True:
+
+        now = datetime.now(JKT)
+
+        # Senin - Jumat
+        if now.weekday() < 5:
+
+            # Jam trading
+            if 8 <= now.hour <= 21:
+
+                # Kirim sekali per jam
+                if now.minute == 0 and now.hour != last_sent_hour:
+
+                    logger.info(f"Kirim signal jam {now.hour}:00")
+
+                    await send_signal(app)
+
+                    last_sent_hour = now.hour
+
+        await asyncio.sleep(15)
+
+# ==========================
+# COMMAND
+# ==========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 BOT SIGNAL AKTIF\n\n"
+        "/harga → cek harga\n"
+        "/signal → kirim manual (admin)"
+    )
+
+async def harga(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    price = get_price()
+
+    if not price:
+        return await update.message.reply_text("Harga tidak tersedia")
+
+    await update.message.reply_text(f"XAUUSD : {price}")
+
+async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != AUTHORIZED_USER_ID:
+        return await update.message.reply_text("Tidak diizinkan")
+
+    await send_signal(context.application)
+    await update.message.reply_text("Signal berhasil dikirim")
+
+# ==========================
+# MAIN
+# ==========================
+
+def main():
+
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("harga", harga))
+    app.add_handler(CommandHandler("signal", signal))
+
+    async def post_init(application):
+        application.create_task(scheduler(application))
+        logger.info("Scheduler berjalan")
+
+    app.post_init = post_init
+
+    logger.info("BOT START RUNNING")
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
