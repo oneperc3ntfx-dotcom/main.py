@@ -18,8 +18,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-MAIN_GROUP = int(os.getenv("MAIN_GROUP_LINK"))  # MUST BE -100xxxx
-
+MAIN_GROUP = int(os.getenv("MAIN_GROUP_LINK"))
 SIGNAL_GROUP = os.getenv("SIGNAL_GROUP_LINK")
 
 GROUPS = {
@@ -50,7 +49,7 @@ CREATE TABLE IF NOT EXISTS members (
 conn.commit()
 
 
-# ================= DB HELPERS =================
+# ================= DB =================
 def save_user(uid, username):
     cursor.execute("""
     INSERT OR IGNORE INTO members (user_id, username, step, status)
@@ -74,14 +73,36 @@ def get_all():
     return cursor.fetchall()
 
 
+# ================= PARSER FORM (FIX UTAMA) =================
+def parse_form(text):
+    data = {
+        "wallet": "-",
+        "telegram_id": "-",
+        "username": "-",
+        "broker": "-"
+    }
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if "ID WALLET" in line:
+            data["wallet"] = line.split(":")[-1].strip()
+        elif "USER ID TELEGRAM" in line:
+            data["telegram_id"] = line.split(":")[-1].strip()
+        elif "USERNAME" in line:
+            data["username"] = line.split(":")[-1].strip()
+        elif "BROKER" in line:
+            data["broker"] = line.split(":")[-1].strip()
+
+    return data
+
+
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     save_user(user.id, user.username)
 
-    keyboard = [
-        [InlineKeyboardButton("🤝 JOIN MITRA", callback_data="menu_join")]
-    ]
+    keyboard = [[InlineKeyboardButton("🤝 JOIN MITRA", callback_data="menu_join")]]
 
     await update.message.reply_text(
         "🚀 ONE PERCENT FX BOT",
@@ -125,7 +146,7 @@ Silahkan buka link di bawah ini:
 
 🔗 {GROUPS[br]}
 
-📸 Kirim screenshot akun MT5 (saldo + ID)
+📸 Kirim screenshot MT5 (saldo + ID akun)
 """)
 
 
@@ -138,7 +159,7 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "step", "waiting_form")
 
     await update.message.reply_text(f"""
-📋 LANGKAH 2 - DATA AKHIR 🚀
+📋 LANGKAH 2 - DATA AKHIR
 
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
@@ -146,12 +167,9 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🏦 BROKER:
 
 ────────────────────
+📌 https://t.me/caralihatidtele
 
-📌 CARA MELIHAT USER ID TELEGRAM:
-👉 https://t.me/caralihatidtele
-
-────────────────────
-⚠️ Kirim data sesuai format ya!
+Kirim sesuai format 👇
 """)
 
 
@@ -167,8 +185,13 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Klik /start untuk mulai")
         return
 
+    parsed = parse_form(update.message.text)
+
     update_user(uid, "form", update.message.text)
-    update_user(uid, "step", "confirm")
+    update_user(uid, "status", "confirm")
+
+    # simpan hasil parse (FIX UTAMA)
+    update_user(uid, "broker", parsed["broker"])
 
     keyboard = [
         [InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{uid}")]
@@ -209,10 +232,10 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= AUTO REVOKE =================
 async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
-    uid = context.job.data["uid"]
-    link = context.job.data["link"]
-
     try:
+        uid = context.job.data["uid"]
+        link = context.job.data["link"]
+
         await context.bot.revoke_chat_invite_link(
             chat_id=MAIN_GROUP,
             invite_link=link
@@ -242,6 +265,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_user(uid, "status", "approved")
         update_user(uid, "invite_used", 1)
 
+        parsed = parse_form(get_user(uid)[4])
+
         await context.bot.send_message(
             uid,
             f"""
@@ -252,22 +277,26 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 👉 {invite.invite_link}
 
+💰 WALLET: {parsed['wallet']}
+🆔 ID: {parsed['telegram_id']}
+
 🔥 Selamat bergabung
 """
         )
 
-        context.job_queue.run_once(
-            revoke_later,
-            when=600,
-            data={"uid": uid, "link": invite.invite_link},
-        )
+        if context.job_queue:
+            context.job_queue.run_once(
+                revoke_later,
+                when=600,
+                data={"uid": uid, "link": invite.invite_link},
+            )
 
     else:
         update_user(uid, "status", "rejected")
 
         await context.bot.send_message(
             uid,
-            "❌ REJECTED\nHubungi @ADMOnePercentsFX"
+            "❌ REJECTED\nHubungi admin"
         )
 
     try:
@@ -276,22 +305,20 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
-# ================= /MEMBER =================
+# ================= MEMBER =================
 async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_all()
-
-    if not data:
-        await update.message.reply_text("📭 Belum ada member")
-        return
 
     text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
 
     for d in data:
+        parsed = parse_form(d[4] or "")
+
         text += f"""
-💰 ID WALLET BROKER: {d[3] if d[3] else '-'}
-🆔 USER ID TELEGRAM: {d[0]}
-👤 USERNAME TELEGRAM: {d[1]}
-🏦 BROKER: {d[2]}
+💰 ID WALLET: {parsed['wallet']}
+🆔 USER ID: {d[0]}
+👤 USERNAME: {d[1]}
+🏦 BROKER: {parsed['broker']}
 📌 STATUS: {d[6]}
 
 ────────────────────
@@ -328,7 +355,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
 
-    logger.info("BOT RUNNING FINAL VERSION")
+    logger.info("BOT FINAL STABLE RUNNING")
     app.run_polling()
 
 
