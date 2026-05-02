@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS members (
     step TEXT,
     status TEXT DEFAULT 'pending',
     invite_used INTEGER DEFAULT 0,
-    mode TEXT DEFAULT 'mitra'
+    mode TEXT DEFAULT 'mitra',
+    form_sent INTEGER DEFAULT 0
 )
 """)
 conn.commit()
@@ -56,17 +57,28 @@ conn.commit()
 # ================= DB =================
 def save_user(uid, username):
     cursor.execute("""
-    INSERT OR IGNORE INTO members (user_id, username, step, status)
+    INSERT OR IGNORE INTO members (
+        user_id,
+        username,
+        step,
+        status
+    )
     VALUES (?, ?, 'start', 'pending')
     """, (uid, username))
     conn.commit()
 
 def update_user(uid, field, value):
-    cursor.execute(f"UPDATE members SET {field}=? WHERE user_id=?", (value, uid))
+    cursor.execute(
+        f"UPDATE members SET {field}=? WHERE user_id=?",
+        (value, uid)
+    )
     conn.commit()
 
 def get_user(uid):
-    cursor.execute("SELECT * FROM members WHERE user_id=?", (uid,))
+    cursor.execute(
+        "SELECT * FROM members WHERE user_id=?",
+        (uid,)
+    )
     return cursor.fetchone()
 
 def get_all():
@@ -83,6 +95,7 @@ def parse_form(text):
     }
 
     for line in text.split("\n"):
+
         line = line.strip()
 
         if "ID WALLET" in line:
@@ -101,9 +114,12 @@ def parse_form(text):
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = update.effective_user
 
     save_user(user.id, user.username)
+
+    update_user(user.id, "step", "start")
 
     keyboard = [
         [
@@ -127,6 +143,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MENU JOIN =================
 async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -147,6 +164,7 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MENU BIO =================
 async def menu_bio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -167,6 +185,7 @@ async def menu_bio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= BROKER MITRA =================
 async def broker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -189,6 +208,7 @@ Silahkan buka link di bawah ini:
 
 # ================= BROKER BIO =================
 async def broker_bio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -208,6 +228,7 @@ silahkan screenshot profil broker kamu / MT5 yang terlihat saldo nya 📸
 
 # ================= PHOTO =================
 async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     uid = update.effective_user.id
 
     user = get_user(uid)
@@ -239,7 +260,7 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ────────────────────
 
-📌 Cara lihat ID telegram silahkan klik link di bawah:
+📌 Cara lihat ID telegram Silahkan Klik Link Di Bawah
 https://t.me/caralihatidtele
 
 Kirim sesuai format 👇
@@ -247,6 +268,7 @@ Kirim sesuai format 👇
 
 # ================= FORM =================
 async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     uid = update.effective_user.id
 
     user = get_user(uid)
@@ -257,17 +279,24 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user[5] != "waiting_form":
         return
 
+    # anti kirim form 2x
+    if user[9] == 1:
+        await update.message.reply_text(
+            "❌ Form sudah dikirim.\nSilahkan klik /start untuk mengulang percakapan"
+        )
+        return
+
     text = update.message.text
 
-    if (
-        "ID WALLET" not in text
-        or "USER ID TELEGRAM" not in text
-        or "USERNAME" not in text
-        or "BROKER" not in text
-    ):
-        await update.message.reply_text(
-            "❌ Format salah.\nSilahkan kirim sesuai format yang diberikan."
-        )
+    valid_form = (
+        "ID WALLET" in text
+        and "USER ID TELEGRAM" in text
+        and "USERNAME" in text
+        and "BROKER" in text
+    )
+
+    # jika bukan form -> abaikan disini
+    if not valid_form:
         return
 
     parsed = parse_form(text)
@@ -276,6 +305,7 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "broker", parsed["broker"])
     update_user(uid, "status", "confirm")
     update_user(uid, "step", "done")
+    update_user(uid, "form_sent", 1)
 
     keyboard = [
         [
@@ -293,6 +323,7 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= CONFIRM =================
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -332,7 +363,9 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= AUTO REVOKE =================
 async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
+
     try:
+
         link = context.job.data["link"]
 
         await context.bot.revoke_chat_invite_link(
@@ -345,6 +378,7 @@ async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
 
 # ================= ADMIN =================
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     q = update.callback_query
     await q.answer()
 
@@ -353,6 +387,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = get_user(uid)
 
+    # anti double click
     if data[6] in ["approved", "rejected"]:
         return
 
@@ -366,6 +401,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_date=expire
         )
 
+        # simpan data hanya setelah approve
         update_user(uid, "status", "approved")
         update_user(uid, "invite_used", 1)
 
@@ -389,6 +425,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if context.job_queue:
+
             context.job_queue.run_once(
                 revoke_later,
                 when=600,
@@ -399,7 +436,12 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.message.edit_reply_markup(
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ COMPLETED", callback_data="done")]
+                [
+                    InlineKeyboardButton(
+                        "✅ COMPLETED",
+                        callback_data="done"
+                    )
+                ]
             ])
         )
 
@@ -414,17 +456,27 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.message.edit_reply_markup(
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ COMPLETED", callback_data="done")]
+                [
+                    InlineKeyboardButton(
+                        "✅ COMPLETED",
+                        callback_data="done"
+                    )
+                ]
             ])
         )
 
 # ================= MEMBER =================
 async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     data = get_all()
 
     text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
 
     for d in data:
+
+        # hanya tampilkan approved
+        if d[6] != "approved":
+            continue
 
         parsed = parse_form(d[4] or "")
 
@@ -442,6 +494,7 @@ async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= INVALID CHAT =================
 async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     uid = update.effective_user.id
 
     user = get_user(uid)
@@ -452,8 +505,9 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # setelah form selesai -> semua chat suruh start
+    # jika sudah selesai
     if user[5] == "done":
+
         await update.message.reply_text(
             "❌ Saya tidak mengerti.\nSilahkan klik /start untuk memulai"
         )
@@ -461,6 +515,7 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # waiting photo
     if user[5] == "waiting_photo":
+
         await update.message.reply_text(
             "📸 Silahkan kirim screenshot profil broker / MT5 yang terlihat saldo nya"
         )
@@ -468,6 +523,20 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # waiting form
     if user[5] == "waiting_form":
+
+        text = update.message.text
+
+        valid_form = (
+            "ID WALLET" in text
+            and "USER ID TELEGRAM" in text
+            and "USERNAME" in text
+            and "BROKER" in text
+        )
+
+        # jika form valid -> jangan kirim pesan invalid
+        if valid_form:
+            return
+
         await update.message.reply_text("""
 📋 LANGKAH 2 - DATA AKHIR
 
@@ -478,7 +547,7 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ────────────────────
 
-📌 Cara lihat ID telegram silahkan klik link di bawah:
+📌 Cara lihat ID telegram Silahkan Klik Link Di Bawah
 https://t.me/caralihatidtele
 
 Kirim sesuai format 👇
@@ -491,6 +560,7 @@ Kirim sesuai format 👇
 
 # ================= ROUTER =================
 async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     d = update.callback_query.data
 
     if d == "menu_join":
@@ -513,6 +583,7 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MAIN =================
 def main():
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -520,7 +591,9 @@ def main():
 
     app.add_handler(CallbackQueryHandler(router))
 
-    app.add_handler(MessageHandler(filters.PHOTO, photo))
+    app.add_handler(
+        MessageHandler(filters.PHOTO, photo)
+    )
 
     app.add_handler(
         MessageHandler(
@@ -539,6 +612,7 @@ def main():
     )
 
     logger.info("BOT FINAL STABLE RUNNING")
+
     app.run_polling()
 
 if __name__ == "__main__":
