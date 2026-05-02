@@ -1,6 +1,8 @@
 import os
 import logging
 import sqlite3
+from datetime import datetime, timedelta
+
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,8 +18,9 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-MAIN_GROUP = os.getenv("MAIN_GROUP_LINK")
-SIGNAL_GROUP = os.getenv("SIGNAL_GROUP_LINK")  # 🔥 LINK SIGNAL PREMIUM
+MAIN_GROUP = int(os.getenv("MAIN_GROUP_LINK"))  # MUST BE -100xxxx
+
+SIGNAL_GROUP = os.getenv("SIGNAL_GROUP_LINK")
 
 GROUPS = {
     "HFM": os.getenv("HFM_GROUP_LINK"),
@@ -39,22 +42,25 @@ CREATE TABLE IF NOT EXISTS members (
     broker TEXT,
     photo TEXT,
     form TEXT,
-    step TEXT
+    step TEXT,
+    status TEXT DEFAULT 'pending',
+    invite_used INTEGER DEFAULT 0
 )
 """)
 conn.commit()
 
 
-def update_user(uid, field, value):
-    cursor.execute(f"UPDATE members SET {field}=? WHERE user_id=?", (value, uid))
+# ================= DB HELPERS =================
+def save_user(uid, username):
+    cursor.execute("""
+    INSERT OR IGNORE INTO members (user_id, username, step, status)
+    VALUES (?, ?, 'start', 'pending')
+    """, (uid, username))
     conn.commit()
 
 
-def save_user(uid, username):
-    cursor.execute(
-        "INSERT OR IGNORE INTO members (user_id, username, step) VALUES (?, ?, 'start')",
-        (uid, username),
-    )
+def update_user(uid, field, value):
+    cursor.execute(f"UPDATE members SET {field}=? WHERE user_id=?", (value, uid))
     conn.commit()
 
 
@@ -63,12 +69,19 @@ def get_user(uid):
     return cursor.fetchone()
 
 
+def get_all():
+    cursor.execute("SELECT * FROM members")
+    return cursor.fetchall()
+
+
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     save_user(user.id, user.username)
 
-    keyboard = [[InlineKeyboardButton("🤝 Join Mitra", callback_data="menu_join")]]
+    keyboard = [
+        [InlineKeyboardButton("🤝 JOIN MITRA", callback_data="menu_join")]
+    ]
 
     await update.message.reply_text(
         "🚀 ONE PERCENT FX BOT",
@@ -105,23 +118,14 @@ async def broker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "step", "waiting_photo")
 
     await q.message.reply_text(f"""
-📌 LANGKAH 1 - PINDAH MITRA 🚀
+📌 LANGKAH 1
 
 👉 CARA PINDAH MITRA:
-Silahkan buka link di bawah ini dan ikuti semua instruksi di dalam grup:
+Silahkan buka link di bawah ini:
 
 🔗 {GROUPS[br]}
 
-────────────────────
-📢 WAJIB DIPERHATIKAN:
-- Ikuti semua step di dalam grup
-- Jangan skip instruksi
-- Pastikan akun sudah benar terhubung
-
-📸 Setelah selesai:
-Kirim screenshot MT5 / Broker yang terlihat:
-💰 SALDO AKUN
-🆔 ID AKUN
+📸 Kirim screenshot akun MT5 (saldo + ID)
 """)
 
 
@@ -134,53 +138,40 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "step", "waiting_form")
 
     await update.message.reply_text(f"""
-📋 LANGKAH 2 - DATA AKHIR 🚀
+📋 LANGKAH 2 - DATA AKHIR
 
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
 👤 USERNAME TELEGRAM:
 🏦 BROKER:
 
-────────────────────
-📌 Cara lihat USER ID:
-https://t.me/caralihatidtele
+📌 https://t.me/caralihatidtele
 
-────────────────────
-⚠️ Kirim sesuai format ya!
+Kirim sesuai format 👇
 """)
 
 
-# ================= TEXT HANDLER (STRICT FORMAT ONLY) =================
+# ================= TEXT =================
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    user = get_user(uid)
 
+    user = get_user(uid)
     if not user:
         return
 
-    step = user[5]
-
-    # ❌ Jika belum di step form
-    if step != "waiting_form":
-        await update.message.reply_text(
-            "❌ Saya tidak memahami kata-kata Anda.\n\nSilahkan klik /start untuk memulai ulang."
-        )
+    if user[5] != "waiting_form":
+        await update.message.reply_text("❌ Klik /start untuk mulai")
         return
 
     update_user(uid, "form", update.message.text)
     update_user(uid, "step", "confirm")
 
     keyboard = [
-        [
-            InlineKeyboardButton(
-                "✅ SAYA SUDAH REGISTRASI",
-                callback_data=f"confirm_{uid}",
-            )
-        ]
+        [InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{uid}")]
     ]
 
     await update.message.reply_text(
-        "📌 KONFIRMASI DATA",
+        "KONFIRMASI DATA",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -193,31 +184,38 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = int(q.data.split("_")[1])
     data = get_user(uid)
 
-    file_id = data[3]
-    form = data[4]
+    update_user(uid, "status", "pending_admin")
 
     keyboard = [
         [
             InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{uid}"),
-            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{uid}"),
+            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{uid}")
         ]
     ]
 
     await context.bot.send_photo(
-        chat_id=ADMIN_ID,
-        photo=file_id,
-        caption=f"""
-📥 NEW MEMBER SUBMISSION
-
-{form}
-""",
+        ADMIN_ID,
+        photo=data[3],
+        caption=f"📥 NEW MEMBER\n\n{data[4]}",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-    await context.bot.send_message(
-        uid,
-        "⏳ Mohon tunggu sebentar...\nKami sedang cek data kamu 🔍",
-    )
+    await context.bot.send_message(uid, "⏳ WAITING APPROVAL...")
+
+
+# ================= AUTO REVOKE + TRACK =================
+async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
+    uid = context.job.data["uid"]
+    link = context.job.data["link"]
+
+    try:
+        await context.bot.revoke_chat_invite_link(
+            chat_id=MAIN_GROUP,
+            invite_link=link
+        )
+        logger.info(f"REVOKED LINK FOR {uid}")
+    except Exception as e:
+        logger.error(e)
 
 
 # ================= ADMIN =================
@@ -229,30 +227,64 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = int(uid)
 
     if action == "approve":
+
+        expire = datetime.utcnow() + timedelta(minutes=10)
+
+        invite = await context.bot.create_chat_invite_link(
+            chat_id=MAIN_GROUP,
+            member_limit=1,
+            expire_date=expire
+        )
+
+        update_user(uid, "status", "approved")
+        update_user(uid, "invite_used", 1)
+
+        # send signal link
         await context.bot.send_message(
             uid,
             f"""
-🎉 SELAMAT BERGABUNG 🚀
+🎉 APPROVED 🚀
 
-🔥 AKSES DISETUJUI!
+💎 1 USER = 1 LINK
+⏳ EXPIRE 10 MENIT
 
-👉 LINK SIGNAL PREMIUM:
-{SIGNAL_GROUP}
+👉 {invite.invite_link}
 
-💎 Welcome to ONE PERCENT FX
-""",
+🔥 Selamat bergabung
+"""
+        )
+
+        # schedule revoke
+        context.job_queue.run_once(
+            revoke_later,
+            when=600,
+            data={"uid": uid, "link": invite.invite_link},
         )
 
     else:
+        update_user(uid, "status", "rejected")
+
         await context.bot.send_message(
             uid,
-            "❌ MOHON MAAF\nREGISTRASI KAMU ADA KESALAHAN\n\nHubungi @ADMOnePercentsFX",
+            "❌ REJECTED\nHubungi @ADMOnePercentsFX"
         )
 
     try:
         await q.message.edit_text("DONE")
     except:
         pass
+
+
+# ================= MEMBER LIST =================
+async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = get_all()
+
+    text = "📊 MEMBER LIST\n\n"
+
+    for d in data:
+        text += f"{d[0]} | {d[1]} | {d[6]}\n"
+
+    await update.message.reply_text(text)
 
 
 # ================= ROUTER =================
@@ -277,11 +309,13 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("member", member))
+
     app.add_handler(CallbackQueryHandler(router))
     app.add_handler(MessageHandler(filters.PHOTO, photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
 
-    logger.info("BOT RUNNING - FINAL FIXED MODE")
+    logger.info("BOT RUNNING FINAL ENTERPRISE MODE")
     app.run_polling()
 
 
