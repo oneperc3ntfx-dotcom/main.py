@@ -138,16 +138,20 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "step", "waiting_form")
 
     await update.message.reply_text(f"""
-📋 LANGKAH 2 - DATA AKHIR
+📋 LANGKAH 2 - DATA AKHIR 🚀
 
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
 👤 USERNAME TELEGRAM:
 🏦 BROKER:
 
-📌 https://t.me/caralihatidtele
+────────────────────
 
-Kirim sesuai format 👇
+📌 CARA MELIHAT USER ID TELEGRAM:
+👉 https://t.me/caralihatidtele
+
+────────────────────
+⚠️ Kirim data sesuai format ya!
 """)
 
 
@@ -203,7 +207,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(uid, "⏳ WAITING APPROVAL...")
 
 
-# ================= AUTO REVOKE + TRACK =================
+# ================= AUTO REVOKE =================
 async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
     uid = context.job.data["uid"]
     link = context.job.data["link"]
@@ -213,7 +217,6 @@ async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
             chat_id=MAIN_GROUP,
             invite_link=link
         )
-        logger.info(f"REVOKED LINK FOR {uid}")
     except Exception as e:
         logger.error(e)
 
@@ -239,13 +242,12 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_user(uid, "status", "approved")
         update_user(uid, "invite_used", 1)
 
-        # send signal link
         await context.bot.send_message(
             uid,
             f"""
 🎉 APPROVED 🚀
 
-💎 1 USER = 1 LINK
+💎 1 USER = 1 PRIVATE LINK
 ⏳ EXPIRE 10 MENIT
 
 👉 {invite.invite_link}
@@ -254,7 +256,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         )
 
-        # schedule revoke
         context.job_queue.run_once(
             revoke_later,
             when=600,
@@ -275,14 +276,26 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
-# ================= MEMBER LIST =================
+# ================= /MEMBER =================
 async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = get_all()
 
-    text = "📊 MEMBER LIST\n\n"
+    if not data:
+        await update.message.reply_text("📭 Belum ada member")
+        return
+
+    text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
 
     for d in data:
-        text += f"{d[0]} | {d[1]} | {d[6]}\n"
+        text += f"""
+💰 ID WALLET BROKER: {d[3] if d[3] else '-'}
+🆔 USER ID TELEGRAM: {d[0]}
+👤 USERNAME TELEGRAM: {d[1]}
+🏦 BROKER: {d[2]}
+📌 STATUS: {d[6]}
+
+────────────────────
+"""
 
     await update.message.reply_text(text)
 
@@ -315,7 +328,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
 
-    logger.info("BOT RUNNING FINAL ENTERPRISE MODE")
+    logger.info("BOT RUNNING FINAL VERSION")
     app.run_polling()
 
 
