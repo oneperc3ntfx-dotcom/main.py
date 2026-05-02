@@ -1,5 +1,6 @@
 import os
 import logging
+import sqlite3
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -32,238 +33,241 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ================= TEMP DATA =================
-user_data = {}
+# ================= DATABASE =================
+conn = sqlite3.connect("members.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS members (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    broker TEXT,
+    wallet_id TEXT,
+    telegram_id TEXT,
+    form TEXT,
+    photo TEXT,
+    status TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+conn.commit()
+
+# ================= DB FUNCTIONS =================
+def save_user(user_id, username):
+    cursor.execute("""
+    INSERT OR IGNORE INTO members (user_id, username, status)
+    VALUES (?, ?, 'new')
+    """, (user_id, username))
+    conn.commit()
 
 
-# ================= SAFE USER =================
-def get_user_id(update: Update):
-    if not update or not update.effective_user:
-        return None
-    return update.effective_user.id
+def update_user(user_id, field, value):
+    cursor.execute(f"""
+    UPDATE members SET {field}=? WHERE user_id=?
+    """, (value, user_id))
+    conn.commit()
+
+
+def get_all_members():
+    cursor.execute("SELECT * FROM members")
+    return cursor.fetchall()
 
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = get_user_id(update)
-        if not user_id:
-            return
+    user = update.effective_user
 
-        keyboard = [
-            [InlineKeyboardButton("🤝 Join Gratis / Mitra", callback_data="menu_join")]
-        ]
+    save_user(user.id, user.username)
 
-        await update.message.reply_text(
-            "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah untuk melanjutkan:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    keyboard = [
+        [InlineKeyboardButton("🤝 Join Gratis / Mitra", callback_data="menu_join")]
+    ]
 
-    except Exception as e:
-        logger.error(f"Start error: {e}")
+    await update.message.reply_text(
+        "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 # ================= MENU JOIN =================
 async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
+    query = update.callback_query
+    await query.answer()
 
-        keyboard = [
-            [InlineKeyboardButton("🏦 HFM", callback_data="broker_HFM")],
-            [InlineKeyboardButton("🏦 EXNESS", callback_data="broker_EXNESS")],
-            [InlineKeyboardButton("🏦 VALETAX", callback_data="broker_VALETAX")]
-        ]
+    keyboard = [
+        [InlineKeyboardButton("🏦 HFM", callback_data="broker_HFM")],
+        [InlineKeyboardButton("🏦 EXNESS", callback_data="broker_EXNESS")],
+        [InlineKeyboardButton("🏦 VALETAX", callback_data="broker_VALETAX")]
+    ]
 
-        await query.message.reply_text(
-            "💡 Pilih broker yang kamu gunakan:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-    except Exception as e:
-        logger.error(f"Menu join error: {e}")
+    await query.message.reply_text(
+        "💡 Pilih broker yang kamu gunakan:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 # ================= BROKER SELECT =================
 async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
+    query = update.callback_query
+    await query.answer()
 
-        user_id = query.from_user.id
-        broker = query.data.split("_")[1]
+    user_id = query.from_user.id
+    broker = query.data.split("_")[1]
 
-        user_data[user_id] = {"broker": broker}
+    update_user(user_id, "broker", broker)
+    update_user(user_id, "status", "join_group")
 
-        await query.message.reply_text(
-            f"""📌 UNTUK PINDAH MITRA
+    await query.message.reply_text(
+        f"""📌 LANGKAH 1 - JOIN BROKER
 
-Silahkan klik link grup di bawah ini:
+Silahkan masuk ke grup berikut:
 🔗 {GROUPS[broker]}
 
-📢 Di dalam grup tersebut sudah tersedia panduan lengkap yang wajib kamu ikuti step-by-step.
+📢 Di dalam grup sudah tersedia panduan lengkap.
 
-⚠️ Pastikan kamu membaca semua instruksi dengan benar sebelum lanjut ke tahap berikutnya.
-
-📸 Setelah selesai, kirim screenshot profil akun broker atau MT5 kamu, pastikan terlihat saldo dan ID akun dengan jelas."""
-        )
-
-    except Exception as e:
-        logger.error(f"Broker error: {e}")
+📸 Setelah selesai, kirim screenshot profil akun (MT5 / broker) yang terlihat saldo & ID."""
+    )
 
 
 # ================= PHOTO =================
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = get_user_id(update)
-        if not user_id or not update.message:
-            return
+    user_id = update.effective_user.id
 
-        if user_id not in user_data:
-            return
+    if update.message is None:
+        return
 
-        user_data[user_id]["photo"] = update.message.photo[-1].file_id
+    file_id = update.message.photo[-1].file_id
 
-        await update.message.reply_text(
-            """✍️ Langkah terakhir, silahkan kirim data berikut:
+    update_user(user_id, "photo", file_id)
+    update_user(user_id, "status", "send_form")
 
-ID WALLET:
+    await update.message.reply_text(
+        """📋 LANGKAH 2 - DATA AKHIR
+
+Silahkan isi format berikut:
+
+ID WALLET BROKER:
 USER ID TELEGRAM:
+USERNAME TELEGRAM:
 BROKER YANG DIGUNAKAN:"""
-        )
-
-    except Exception as e:
-        logger.error(f"Photo error: {e}")
+    )
 
 
 # ================= TEXT FORM =================
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = get_user_id(update)
-        if not user_id or not update.message:
-            return
+    user_id = update.effective_user.id
 
-        if user_id not in user_data:
-            return
+    update_user(user_id, "form", update.message.text)
+    update_user(user_id, "status", "confirm")
 
-        user_data[user_id]["form"] = update.message.text
-        data = user_data[user_id]
-
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{user_id}"),
-                InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{user_id}")
-            ]
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ SAYA SUDAH REGISTRASI",
+                callback_data=f"confirm_{user_id}"
+            )
         ]
+    ]
 
-        await context.bot.send_photo(
-            chat_id=ADMIN_ID,
-            photo=data["photo"],
-            caption=f"""
-📥 REGISTRASI MEMBER BARU
+    await update.message.reply_text(
+        "📌 KONFIRMASI REGISTRASI\n\nJika data sudah benar, klik tombol di bawah:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-{data['form']}
 
-BROKER: {data['broker']}
-USER ID: {user_id}
-""",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+# ================= CONFIRM =================
+async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    uid = int(query.data.split("_")[1])
+
+    update_user(uid, "status", "pending")
+
+    cursor.execute("SELECT * FROM members WHERE user_id=?", (uid,))
+    data = cursor.fetchone()
+
+    await context.bot.send_message(
+        chat_id=uid,
+        text="⏳ MOHON DITUNGGU SEBENTAR, kami sedang verifikasi data kamu..."
+    )
+
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"""
+📥 MEMBER BARU (CRM DATA)
+
+USER ID: {data[0]}
+USERNAME: {data[1]}
+BROKER: {data[2]}
+STATUS: {data[7]}
+"""
+    )
+
+
+# ================= ADMIN APPROVE/REJECT =================
+async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action, uid = query.data.split("_")
+    uid = int(uid)
+
+    if action == "approve":
+        update_user(uid, "status", "approved")
+
+        await context.bot.send_message(
+            chat_id=uid,
+            text="🎉 APPROVED - Selamat bergabung di ONE PERCENT FX"
         )
 
-        await update.message.reply_text("📨 Data kamu sudah dikirim ke tim verifikasi.")
+    else:
+        update_user(uid, "status", "rejected")
 
-    except Exception as e:
-        logger.error(f"Text error: {e}")
-
-
-# ================= ADMIN ACTION =================
-async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
-
-        action, uid = query.data.split("_")
-        uid = int(uid)
-
-        if uid not in user_data:
-            await query.message.edit_text("❌ Data user tidak ditemukan")
-            return
-
-        data = user_data[uid]
-
-        # ================= APPROVE =================
-        if action == "approve":
-
-            broker = data["broker"]
-
-            try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=f"""🎉 REGISTRASI BERHASIL DISETUJUI
-
-📌 Silahkan lanjutkan ke broker kamu:
-{GROUPS[broker]}
-
-🚀 Pastikan mengikuti semua instruksi yang diberikan."""
-                )
-
-                invite = await context.bot.create_chat_invite_link(
-                    chat_id=MAIN_GROUP,
-                    member_limit=1
-                )
-
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=f"""🔥 SELAMAT DATANG DI ONE PERCENT FX
-
-👉 GRUP UTAMA:
-{invite.invite_link}
-
-⚡ Selamat bergabung, semoga bisa grow bersama kami!"""
-                )
-
-            except Exception as e:
-                logger.error(f"Approve error: {e}")
-
-            await query.message.edit_text("✅ USER APPROVED")
+        await context.bot.send_message(
+            chat_id=uid,
+            text="❌ Registrasi ditolak. Hubungi admin."
+        )
 
 
-        # ================= REJECT =================
-        else:
+# ================= /MEMBER COMMAND =================
+async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    members = get_all_members()
 
-            try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text="""❌ Mohon maaf, registrasi kamu belum berhasil.
+    if not members:
+        await update.message.reply_text("Belum ada member.")
+        return
 
-Silahkan hubungi admin:
-@ADMOnePercentsFX"""
-                )
-            except:
-                pass
+    text = "📊 DAFTAR MEMBER:\n\n"
 
-            await query.message.edit_text("❌ USER REJECTED")
+    for m in members:
+        text += (
+            f"ID: {m[0]}\n"
+            f"Username: {m[1]}\n"
+            f"Broker: {m[2]}\n"
+            f"Status: {m[7]}\n"
+            "-----------------\n"
+        )
 
-    except Exception as e:
-        logger.error(f"Admin error: {e}")
+    await update.message.reply_text(text)
 
 
 # ================= ROUTER =================
 async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        data = update.callback_query.data
+    data = update.callback_query.data
 
-        if data == "menu_join":
-            return await menu_join(update, context)
+    if data == "menu_join":
+        return await menu_join(update, context)
 
-        if data.startswith("broker_"):
-            return await broker_select(update, context)
+    if data.startswith("broker_"):
+        return await broker_select(update, context)
 
-        if data.startswith("approve") or data.startswith("reject"):
-            return await admin_action(update, context)
+    if data.startswith("confirm_"):
+        return await confirm_registration(update, context)
 
-    except Exception as e:
-        logger.error(f"Router error: {e}")
+    if data.startswith("approve") or data.startswith("reject"):
+        return await admin_action(update, context)
 
 
 # ================= MAIN =================
@@ -271,11 +275,13 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("member", member_list))
+
     app.add_handler(CallbackQueryHandler(router))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING - PREMIUM MODE")
+    logger.info("BOT RUNNING - PERSISTENT CRM MODE")
     app.run_polling()
 
 
