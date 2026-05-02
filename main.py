@@ -32,11 +32,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ================= MEMORY (TEMP) =================
+# ================= TEMP DATA =================
 user_data = {}
 
 
-# ================= SAFE USER ID =================
+# ================= SAFE USER =================
 def get_user_id(update: Update):
     if not update or not update.effective_user:
         return None
@@ -55,7 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
         await update.message.reply_text(
-            "👋 Selamat datang di ONE PERCENT FX\n\nPilih menu di bawah:",
+            "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah untuk melanjutkan:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -84,7 +84,7 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Menu join error: {e}")
 
 
-# ================= BROKER =================
+# ================= BROKER SELECT =================
 async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -96,12 +96,16 @@ async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id] = {"broker": broker}
 
         await query.message.reply_text(
-            f"""📌 SILAHKAN PINDAH MITRA
+            f"""📌 UNTUK PINDAH MITRA
 
-🔗 Link:
-{GROUPS[broker]}
+Silahkan klik link grup di bawah ini:
+🔗 {GROUPS[broker]}
 
-📸 Setelah selesai, kirim screenshot profil kamu."""
+📢 Di dalam grup tersebut sudah tersedia panduan lengkap yang wajib kamu ikuti step-by-step.
+
+⚠️ Pastikan kamu membaca semua instruksi dengan benar sebelum lanjut ke tahap berikutnya.
+
+📸 Setelah selesai, kirim screenshot profil akun broker atau MT5 kamu, pastikan terlihat saldo dan ID akun dengan jelas."""
         )
 
     except Exception as e:
@@ -121,11 +125,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id]["photo"] = update.message.photo[-1].file_id
 
         await update.message.reply_text(
-            """✍️ Kirim format:
+            """✍️ Langkah terakhir, silahkan kirim data berikut:
 
 ID WALLET:
 USER ID TELEGRAM:
-BROKER YANG DI PAKAI:"""
+BROKER YANG DIGUNAKAN:"""
         )
 
     except Exception as e:
@@ -143,7 +147,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         user_data[user_id]["form"] = update.message.text
-
         data = user_data[user_id]
 
         keyboard = [
@@ -157,7 +160,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=ADMIN_ID,
             photo=data["photo"],
             caption=f"""
-📥 REGISTRASI MEMBER
+📥 REGISTRASI MEMBER BARU
 
 {data['form']}
 
@@ -167,13 +170,13 @@ USER ID: {user_id}
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-        await update.message.reply_text("📨 Data dikirim ke admin.")
+        await update.message.reply_text("📨 Data kamu sudah dikirim ke tim verifikasi.")
 
     except Exception as e:
         logger.error(f"Text error: {e}")
 
 
-# ================= ADMIN =================
+# ================= ADMIN ACTION =================
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -183,7 +186,7 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid = int(uid)
 
         if uid not in user_data:
-            await query.message.edit_text("❌ User tidak ditemukan")
+            await query.message.edit_text("❌ Data user tidak ditemukan")
             return
 
         data = user_data[uid]
@@ -196,10 +199,12 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=uid,
-                    text=f"""🎉 REGISTRASI DISETUJUI
+                    text=f"""🎉 REGISTRASI BERHASIL DISETUJUI
 
-📌 Join broker:
-{GROUPS[broker]}"""
+📌 Silahkan lanjutkan ke broker kamu:
+{GROUPS[broker]}
+
+🚀 Pastikan mengikuti semua instruksi yang diberikan."""
                 )
 
                 invite = await context.bot.create_chat_invite_link(
@@ -209,17 +214,18 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await context.bot.send_message(
                     chat_id=uid,
-                    text=f"""🔥 GRUP UTAMA:
+                    text=f"""🔥 SELAMAT DATANG DI ONE PERCENT FX
 
-👉 {invite.invite_link}
+👉 GRUP UTAMA:
+{invite.invite_link}
 
-🚀 Selamat bergabung!"""
+⚡ Selamat bergabung, semoga bisa grow bersama kami!"""
                 )
 
             except Exception as e:
                 logger.error(f"Approve error: {e}")
 
-            await query.message.edit_text("✅ APPROVED")
+            await query.message.edit_text("✅ USER APPROVED")
 
 
         # ================= REJECT =================
@@ -228,12 +234,15 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=uid,
-                    text="❌ Registrasi ditolak. Hubungi @ADMOnePercentsFX"
+                    text="""❌ Mohon maaf, registrasi kamu belum berhasil.
+
+Silahkan hubungi admin:
+@ADMOnePercentsFX"""
                 )
             except:
                 pass
 
-            await query.message.edit_text("❌ REJECTED")
+            await query.message.edit_text("❌ USER REJECTED")
 
     except Exception as e:
         logger.error(f"Admin error: {e}")
@@ -266,7 +275,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING (PRODUCTION MODE)")
+    logger.info("BOT RUNNING - PREMIUM MODE")
     app.run_polling()
 
 
