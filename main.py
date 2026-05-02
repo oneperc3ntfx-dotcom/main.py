@@ -293,7 +293,6 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user[5] != "waiting_form":
         return
 
-    # anti kirim form 2x
     if user[9] == 1:
 
         await update.message.reply_text(
@@ -311,7 +310,6 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         and "BROKER" in text
     )
 
-    # jika bukan form
     if not valid_form:
         return
 
@@ -323,7 +321,6 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "step", "done")
     update_user(uid, "form_sent", 1)
 
-    # FIX AGAR INVALID_MESSAGE TIDAK IKUT JALAN
     context.user_data["skip_invalid"] = True
 
     keyboard = [
@@ -406,7 +403,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = get_user(uid)
 
-    # anti double click
     if data[6] in ["approved", "rejected"]:
         return
 
@@ -442,34 +438,14 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         )
 
-        if context.job_queue:
-
-            context.job_queue.run_once(
-                revoke_later,
-                when=600,
-                data={
-                    "link": invite.invite_link
-                }
-            )
-
-        await q.message.edit_reply_markup(
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "✅ COMPLETED",
-                        callback_data="done"
-                    )
-                ]
-            ])
-        )
-
     else:
 
         update_user(uid, "status", "rejected")
 
+        # ✅ HANYA INI YANG DIUBAH
         await context.bot.send_message(
             uid,
-            "❌ REJECTED\nHubungi admin"
+            "❌ Mohon maaf, registrasi kamu gagal atau ada kesalahan pada data yang dikirim.\n\nSilahkan hubungi admin untuk masalah ini ya @ADMOnePercentsFX"
         )
 
         await q.message.edit_reply_markup(
@@ -492,7 +468,6 @@ async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for d in data:
 
-        # hanya tampilkan approved
         if d[6] != "approved":
             continue
 
@@ -513,7 +488,6 @@ async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= INVALID CHAT =================
 async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # FIX AGAR TIDAK DOBEL PESAN
     if context.user_data.get("skip_invalid"):
 
         context.user_data["skip_invalid"] = False
@@ -531,7 +505,6 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # jika sudah selesai
     if user[5] == "done":
 
         await update.message.reply_text(
@@ -540,7 +513,6 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # waiting photo
     if user[5] == "waiting_photo":
 
         await update.message.reply_text(
@@ -549,7 +521,6 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # waiting form
     if user[5] == "waiting_form":
 
         text = update.message.text
@@ -561,7 +532,6 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             and "BROKER" in text
         )
 
-        # jika form valid jangan kirim invalid
         if valid_form:
             return
 
