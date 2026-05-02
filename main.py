@@ -23,8 +23,6 @@ GROUPS = {
     "VALETAX": os.getenv("VALETAX_GROUP_LINK"),
 }
 
-MAIN_GROUP = os.getenv("MAIN_GROUP_LINK")
-
 # ================= LOGGING =================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -33,7 +31,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ================= DATABASE =================
+# ================= DATABASE (PERSISTENT) =================
 conn = sqlite3.connect("members.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -85,7 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah:",
+        "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah untuk melanjutkan 🚀",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -102,7 +100,7 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.message.reply_text(
-        "💡 Pilih broker yang kamu gunakan:",
+        "💡 Pilih broker yang kamu gunakan 👇",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -116,17 +114,28 @@ async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     broker = query.data.split("_")[1]
 
     update_user(user_id, "broker", broker)
-    update_user(user_id, "status", "join_group")
+    update_user(user_id, "status", "step_group")
 
     await query.message.reply_text(
-        f"""📌 LANGKAH 1 - JOIN BROKER
+        f"""📌✨ LANGKAH 1 - PINDAH MITRA
 
-Silahkan masuk ke grup berikut:
+🚀 Untuk melanjutkan proses, silahkan klik link grup di bawah ini:
+
 🔗 {GROUPS[broker]}
 
-📢 Di dalam grup sudah tersedia panduan lengkap.
+──────────────────────
+📢 Di dalam grup tersebut sudah tersedia panduan lengkap
+yang wajib kamu ikuti step-by-step sampai selesai.
 
-📸 Setelah selesai, kirim screenshot profil akun (MT5 / broker) yang terlihat saldo & ID."""
+⚠️ Pastikan kamu membaca semua instruksi dengan benar ya!
+
+──────────────────────
+📸 Setelah selesai mengikuti semua instruksi,
+kirim screenshot profil akun broker / MT5 kamu
+yang terlihat jelas:
+
+💰 SALDO AKUN
+🆔 ID AKUN"""
     )
 
 
@@ -134,23 +143,32 @@ Silahkan masuk ke grup berikut:
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if update.message is None:
-        return
-
     file_id = update.message.photo[-1].file_id
 
     update_user(user_id, "photo", file_id)
-    update_user(user_id, "status", "send_form")
+    update_user(user_id, "status", "step_form")
 
     await update.message.reply_text(
-        """📋 LANGKAH 2 - DATA AKHIR
+        """📋✨ LANGKAH 2 - DATA AKHIR
 
-Silahkan isi format berikut:
+🚀 Mantap! Kamu sudah hampir selesai.
 
-ID WALLET BROKER:
-USER ID TELEGRAM:
-USERNAME TELEGRAM:
-BROKER YANG DIGUNAKAN:"""
+Silahkan kirim data berikut dengan format yang benar ya 👇
+
+💰 ID WALLET BROKER:
+🆔 USER ID TELEGRAM:
+👤 USERNAME TELEGRAM:
+🏦 BROKER YANG DIGUNAKAN:
+
+──────────────────────
+⚠️ Pastikan data yang kamu kirim sudah benar & sesuai akun kamu ya
+agar proses verifikasi berjalan lebih cepat 🔥
+
+📌 Untuk melihat USER ID Telegram kamu:
+👉 https://t.me/caralihatidtele
+
+──────────────────────
+💡 Setelah semua dikirim, klik tombol konfirmasi yang akan muncul berikutnya."""
     )
 
 
@@ -159,7 +177,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     update_user(user_id, "form", update.message.text)
-    update_user(user_id, "status", "confirm")
+    update_user(user_id, "status", "pending_confirm")
 
     keyboard = [
         [
@@ -171,7 +189,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "📌 KONFIRMASI REGISTRASI\n\nJika data sudah benar, klik tombol di bawah:",
+        "📌 KONFIRMASI DATA\n\nJika semua data sudah benar, silahkan klik tombol di bawah 👇",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -183,55 +201,30 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
 
     uid = int(query.data.split("_")[1])
 
-    update_user(uid, "status", "pending")
+    update_user(uid, "status", "waiting_review")
 
     cursor.execute("SELECT * FROM members WHERE user_id=?", (uid,))
     data = cursor.fetchone()
 
     await context.bot.send_message(
         chat_id=uid,
-        text="⏳ MOHON DITUNGGU SEBENTAR, kami sedang verifikasi data kamu..."
+        text="⏳ MOHON DITUNGGU SEBENTAR...\n\nKami sedang melakukan pengecekan data kamu ya 🔍"
     )
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=f"""
-📥 MEMBER BARU (CRM DATA)
+📥 MEMBER BARU MASUK
 
-USER ID: {data[0]}
-USERNAME: {data[1]}
-BROKER: {data[2]}
-STATUS: {data[7]}
+🆔 USER ID: {data[0]}
+👤 USERNAME: {data[1]}
+🏦 BROKER: {data[2]}
+📊 STATUS: {data[7]}
 """
     )
 
 
-# ================= ADMIN APPROVE/REJECT =================
-async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    action, uid = query.data.split("_")
-    uid = int(uid)
-
-    if action == "approve":
-        update_user(uid, "status", "approved")
-
-        await context.bot.send_message(
-            chat_id=uid,
-            text="🎉 APPROVED - Selamat bergabung di ONE PERCENT FX"
-        )
-
-    else:
-        update_user(uid, "status", "rejected")
-
-        await context.bot.send_message(
-            chat_id=uid,
-            text="❌ Registrasi ditolak. Hubungi admin."
-        )
-
-
-# ================= /MEMBER COMMAND =================
+# ================= /MEMBER =================
 async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     members = get_all_members()
 
@@ -239,15 +232,15 @@ async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Belum ada member.")
         return
 
-    text = "📊 DAFTAR MEMBER:\n\n"
+    text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
 
     for m in members:
         text += (
-            f"ID: {m[0]}\n"
-            f"Username: {m[1]}\n"
-            f"Broker: {m[2]}\n"
-            f"Status: {m[7]}\n"
-            "-----------------\n"
+            f"🆔 {m[0]}\n"
+            f"👤 {m[1]}\n"
+            f"🏦 {m[2]}\n"
+            f"📌 {m[7]}\n"
+            "────────────────\n"
         )
 
     await update.message.reply_text(text)
@@ -266,9 +259,6 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("confirm_"):
         return await confirm_registration(update, context)
 
-    if data.startswith("approve") or data.startswith("reject"):
-        return await admin_action(update, context)
-
 
 # ================= MAIN =================
 def main():
@@ -281,7 +271,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING - PERSISTENT CRM MODE")
+    logger.info("BOT RUNNING - FINAL PRODUCTION MODE")
     app.run_polling()
 
 
