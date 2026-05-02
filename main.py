@@ -17,6 +17,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 MAIN_GROUP = os.getenv("MAIN_GROUP_LINK")
+SIGNAL_GROUP = os.getenv("SIGNAL_GROUP_LINK")  # 🔥 LINK SIGNAL PREMIUM
 
 GROUPS = {
     "HFM": os.getenv("HFM_GROUP_LINK"),
@@ -27,7 +28,7 @@ GROUPS = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ================= DB =================
+# ================= DATABASE =================
 conn = sqlite3.connect("members.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -43,14 +44,19 @@ CREATE TABLE IF NOT EXISTS members (
 """)
 conn.commit()
 
+
 def update_user(uid, field, value):
     cursor.execute(f"UPDATE members SET {field}=? WHERE user_id=?", (value, uid))
     conn.commit()
 
+
 def save_user(uid, username):
-    cursor.execute("INSERT OR IGNORE INTO members (user_id, username, step) VALUES (?, ?, 'start')",
-                   (uid, username))
+    cursor.execute(
+        "INSERT OR IGNORE INTO members (user_id, username, step) VALUES (?, ?, 'start')",
+        (uid, username),
+    )
     conn.commit()
+
 
 def get_user(uid):
     cursor.execute("SELECT * FROM members WHERE user_id=?", (uid,))
@@ -66,7 +72,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "🚀 ONE PERCENT FX BOT",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -78,10 +84,13 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("HFM", callback_data="broker_HFM")],
         [InlineKeyboardButton("EXNESS", callback_data="broker_EXNESS")],
-        [InlineKeyboardButton("VALETAX", callback_data="broker_VALETAX")]
+        [InlineKeyboardButton("VALETAX", callback_data="broker_VALETAX")],
     ]
 
-    await q.message.reply_text("Pilih broker:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await q.message.reply_text(
+        "Pilih broker:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 # ================= BROKER =================
@@ -90,18 +99,29 @@ async def broker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     uid = q.from_user.id
-    broker = q.data.split("_")[1]
+    br = q.data.split("_")[1]
 
-    update_user(uid, "broker", broker)
+    update_user(uid, "broker", br)
     update_user(uid, "step", "waiting_photo")
 
     await q.message.reply_text(f"""
-📌 LANGKAH 1
+📌 LANGKAH 1 - PINDAH MITRA 🚀
 
-🔗 Join grup:
-{GROUPS[broker]}
+👉 CARA PINDAH MITRA:
+Silahkan buka link di bawah ini dan ikuti semua instruksi di dalam grup:
 
-📸 Setelah itu kirim screenshot akun MT5 (saldo + ID)
+🔗 {GROUPS[br]}
+
+────────────────────
+📢 WAJIB DIPERHATIKAN:
+- Ikuti semua step di dalam grup
+- Jangan skip instruksi
+- Pastikan akun sudah benar terhubung
+
+📸 Setelah selesai:
+Kirim screenshot MT5 / Broker yang terlihat:
+💰 SALDO AKUN
+🆔 ID AKUN
 """)
 
 
@@ -122,26 +142,46 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🏦 BROKER:
 
 ────────────────────
-📌 Cara lihat ID Telegram:
+📌 Cara lihat USER ID:
 https://t.me/caralihatidtele
 
 ────────────────────
-Kirim format di atas ya 👇
+⚠️ Kirim sesuai format ya!
 """)
 
 
-# ================= FORM =================
+# ================= TEXT HANDLER (STRICT FORMAT ONLY) =================
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    user = get_user(uid)
+
+    if not user:
+        return
+
+    step = user[5]
+
+    # ❌ Jika belum di step form
+    if step != "waiting_form":
+        await update.message.reply_text(
+            "❌ Saya tidak memahami kata-kata Anda.\n\nSilahkan klik /start untuk memulai ulang."
+        )
+        return
 
     update_user(uid, "form", update.message.text)
     update_user(uid, "step", "confirm")
 
-    keyboard = [[InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{uid}")]]
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ SAYA SUDAH REGISTRASI",
+                callback_data=f"confirm_{uid}",
+            )
+        ]
+    ]
 
     await update.message.reply_text(
-        "KONFIRMASI DATA",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "📌 KONFIRMASI DATA",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -159,7 +199,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{uid}"),
-            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{uid}")
+            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{uid}"),
         ]
     ]
 
@@ -167,16 +207,16 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=ADMIN_ID,
         photo=file_id,
         caption=f"""
-📥 NEW MEMBER
+📥 NEW MEMBER SUBMISSION
 
 {form}
 """,
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
     await context.bot.send_message(
         uid,
-        "⏳ MOHON TUNGGU SEBENTAR...\nKami cek data kamu dulu ya 🔍"
+        "⏳ Mohon tunggu sebentar...\nKami sedang cek data kamu 🔍",
     )
 
 
@@ -191,16 +231,28 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "approve":
         await context.bot.send_message(
             uid,
-            "🎉 SELAMAT BERGABUNG 🚀\n\n👉 LINK SIGNAL GROUP AKAN DIBERIKAN DI SINI"
+            f"""
+🎉 SELAMAT BERGABUNG 🚀
+
+🔥 AKSES DISETUJUI!
+
+👉 LINK SIGNAL PREMIUM:
+{SIGNAL_GROUP}
+
+💎 Welcome to ONE PERCENT FX
+""",
         )
 
     else:
         await context.bot.send_message(
             uid,
-            "❌ MOHON MAAF\nREGISTRASI KAMU ADA KESALAHAN\n\nHubungi @ADMOnePercentsFX"
+            "❌ MOHON MAAF\nREGISTRASI KAMU ADA KESALAHAN\n\nHubungi @ADMOnePercentsFX",
         )
 
-    await q.message.edit_text("DONE")
+    try:
+        await q.message.edit_text("DONE")
+    except:
+        pass
 
 
 # ================= ROUTER =================
@@ -229,7 +281,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
 
-    logger.info("BOT RUNNING FIXED VERSION")
+    logger.info("BOT RUNNING - FINAL FIXED MODE")
     app.run_polling()
 
 
