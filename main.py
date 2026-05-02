@@ -16,6 +16,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+MAIN_GROUP = os.getenv("MAIN_GROUP_LINK")
 
 GROUPS = {
     "HFM": os.getenv("HFM_GROUP_LINK"),
@@ -31,7 +32,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ================= DATABASE (PERSISTENT) =================
+# ================= DATABASE =================
 conn = sqlite3.connect("members.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 conn.commit()
 
-# ================= DB FUNCTIONS =================
+# ================= DB =================
 def save_user(user_id, username):
     cursor.execute("""
     INSERT OR IGNORE INTO members (user_id, username, status)
@@ -75,7 +76,6 @@ def get_all_members():
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
     save_user(user.id, user.username)
 
     keyboard = [
@@ -83,12 +83,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "👋 Selamat datang di ONE PERCENT FX\n\nSilahkan pilih menu di bawah untuk melanjutkan 🚀",
+        "👋 Selamat datang di ONE PERCENT FX",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
-# ================= MENU JOIN =================
+# ================= MENU =================
 async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -100,12 +100,12 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.message.reply_text(
-        "💡 Pilih broker yang kamu gunakan 👇",
+        "💡 Pilih broker:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
-# ================= BROKER SELECT =================
+# ================= BROKER =================
 async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -117,79 +117,77 @@ async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(user_id, "status", "step_group")
 
     await query.message.reply_text(
-        f"""📌✨ LANGKAH 1 - PINDAH MITRA
-
-🚀 Untuk melanjutkan proses, silahkan klik link grup di bawah ini:
+        f"""📌 PINDAH MITRA
 
 🔗 {GROUPS[broker]}
 
-──────────────────────
-📢 Di dalam grup tersebut sudah tersedia panduan lengkap
-yang wajib kamu ikuti step-by-step sampai selesai.
-
-⚠️ Pastikan kamu membaca semua instruksi dengan benar ya!
-
-──────────────────────
-📸 Setelah selesai mengikuti semua instruksi,
-kirim screenshot profil akun broker / MT5 kamu
-yang terlihat jelas:
-
-💰 SALDO AKUN
-🆔 ID AKUN"""
+📸 Setelah selesai kirim screenshot akun (MT5 / broker)
+yang terlihat SALDO & ID AKUN."""
     )
 
 
-# ================= PHOTO =================
+# ================= PHOTO (FIXED SEND TO ADMIN) =================
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
+    user = update.effective_user
     file_id = update.message.photo[-1].file_id
 
-    update_user(user_id, "photo", file_id)
-    update_user(user_id, "status", "step_form")
+    update_user(user.id, "photo", file_id)
+    update_user(user.id, "status", "step_form")
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{user.id}"),
+            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{user.id}")
+        ]
+    ]
+
+    cursor.execute("SELECT * FROM members WHERE user_id=?", (user.id,))
+    data = cursor.fetchone()
+
+    # 🔥 SEND PHOTO TO ADMIN + BUTTON
+    await context.bot.send_photo(
+        chat_id=ADMIN_ID,
+        photo=file_id,
+        caption=f"""
+📥 MEMBER SUBMISSION
+
+🆔 USER ID: {data[0]}
+👤 USERNAME: {data[1]}
+🏦 BROKER: {data[2]}
+📊 STATUS: {data[7]}
+
+📌 WAITING VERIFICATION...
+""",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
     await update.message.reply_text(
-        """📋✨ LANGKAH 2 - DATA AKHIR
-
-🚀 Mantap! Kamu sudah hampir selesai.
-
-Silahkan kirim data berikut dengan format yang benar ya 👇
+        """📋 LANGKAH 2 - DATA AKHIR
 
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
 👤 USERNAME TELEGRAM:
 🏦 BROKER YANG DIGUNAKAN:
 
-──────────────────────
-⚠️ Pastikan data yang kamu kirim sudah benar & sesuai akun kamu ya
-agar proses verifikasi berjalan lebih cepat 🔥
-
-📌 Untuk melihat USER ID Telegram kamu:
-👉 https://t.me/caralihatidtele
-
-──────────────────────
-💡 Setelah semua dikirim, klik tombol konfirmasi yang akan muncul berikutnya."""
+📌 Kirim data dengan benar ya."""
     )
 
 
-# ================= TEXT FORM =================
+# ================= TEXT =================
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
 
-    update_user(user_id, "form", update.message.text)
-    update_user(user_id, "status", "pending_confirm")
+    update_user(user.id, "form", update.message.text)
+    update_user(user.id, "status", "pending")
 
     keyboard = [
         [
-            InlineKeyboardButton(
-                "✅ SAYA SUDAH REGISTRASI",
-                callback_data=f"confirm_{user_id}"
-            )
+            InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{user.id}")
         ]
     ]
 
     await update.message.reply_text(
-        "📌 KONFIRMASI DATA\n\nJika semua data sudah benar, silahkan klik tombol di bawah 👇",
+        "📌 KONFIRMASI DATA",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -203,47 +201,59 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
 
     update_user(uid, "status", "waiting_review")
 
-    cursor.execute("SELECT * FROM members WHERE user_id=?", (uid,))
-    data = cursor.fetchone()
-
     await context.bot.send_message(
         chat_id=uid,
-        text="⏳ MOHON DITUNGGU SEBENTAR...\n\nKami sedang melakukan pengecekan data kamu ya 🔍"
+        text="⏳ MOHON TUNGGU, kami sedang cek data kamu..."
     )
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=f"""
-📥 MEMBER BARU MASUK
+📥 NEW MEMBER CONFIRM
 
-🆔 USER ID: {data[0]}
-👤 USERNAME: {data[1]}
-🏦 BROKER: {data[2]}
-📊 STATUS: {data[7]}
+USER ID: {uid}
+STATUS: WAITING APPROVAL
 """
     )
 
 
-# ================= /MEMBER =================
-async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    members = get_all_members()
+# ================= ADMIN ACTION (FIXED) =================
+async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-    if not members:
-        await update.message.reply_text("Belum ada member.")
-        return
+    action, uid = query.data.split("_")
+    uid = int(uid)
 
-    text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
+    cursor.execute("SELECT broker FROM members WHERE user_id=?", (uid,))
+    broker = cursor.fetchone()[0]
 
-    for m in members:
-        text += (
-            f"🆔 {m[0]}\n"
-            f"👤 {m[1]}\n"
-            f"🏦 {m[2]}\n"
-            f"📌 {m[7]}\n"
-            "────────────────\n"
+    if action == "approve":
+
+        invite = await context.bot.create_chat_invite_link(
+            chat_id=MAIN_GROUP,
+            member_limit=1
         )
 
-    await update.message.reply_text(text)
+        await context.bot.send_message(
+            chat_id=uid,
+            text=f"""🎉 APPROVED!
+
+Selamat bergabung 🚀
+
+👉 {invite.invite_link}
+
+🔥 Welcome to ONE PERCENT FX"""
+        )
+
+    else:
+
+        await context.bot.send_message(
+            chat_id=uid,
+            text="❌ MOHON MAAF\n\nRegistrasi kamu ada kesalahan.\nSilahkan hubungi admin: @ADMOnePercentsFX"
+        )
+
+    await query.message.edit_text(f"Processed: {action.upper()}")
 
 
 # ================= ROUTER =================
@@ -259,6 +269,21 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("confirm_"):
         return await confirm_registration(update, context)
 
+    if data.startswith("approve") or data.startswith("reject"):
+        return await admin_action(update, context)
+
+
+# ================= MEMBER LIST =================
+async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    members = get_all_members()
+
+    text = "📊 MEMBER LIST\n\n"
+
+    for m in members:
+        text += f"{m[0]} | {m[1]} | {m[2]} | {m[7]}\n"
+
+    await update.message.reply_text(text)
+
 
 # ================= MAIN =================
 def main():
@@ -271,7 +296,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING - FINAL PRODUCTION MODE")
+    logger.info("BOT RUNNING - FIXED PRODUCTION MODE")
     app.run_polling()
 
 
