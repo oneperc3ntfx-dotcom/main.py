@@ -70,6 +70,28 @@ def get_all_members():
     return cursor.fetchall()
 
 
+# ================= SINGLE INVITE LINK CACHE =================
+MAIN_INVITE_LINK = None
+
+
+async def get_invite_link(context):
+    global MAIN_INVITE_LINK
+
+    if MAIN_INVITE_LINK:
+        return MAIN_INVITE_LINK
+
+    try:
+        link = await context.bot.create_chat_invite_link(
+            chat_id=MAIN_GROUP,
+            member_limit=1
+        )
+        MAIN_INVITE_LINK = link.invite_link
+        return MAIN_INVITE_LINK
+    except Exception as e:
+        logger.error(f"Invite link error: {e}")
+        return "GROUP ERROR - CONTACT ADMIN"
+
+
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -97,7 +119,7 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.message.reply_text(
-        "💡 Pilih broker yang kamu gunakan 👇",
+        "💡 Pilih broker 👇",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -116,18 +138,11 @@ async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(
         f"""📌 LANGKAH 1 - PINDAH MITRA 🚀
 
-🔗 Silahkan klik link grup di bawah ini:
+🔗 Klik link grup:
 {GROUPS[broker]}
 
-📢 Di dalam grup sudah ada panduan lengkap yang wajib kamu ikuti step-by-step.
-
-⚠️ Jangan skip ya, baca semua instruksi dengan teliti!
-
-📸 Setelah selesai:
-Kirim screenshot akun broker / MT5 kamu
-yang terlihat:
-💰 SALDO
-🆔 ID AKUN"""
+📸 Setelah selesai kirim screenshot MT5 / broker
+yang terlihat SALDO & ID AKUN"""
     )
 
 
@@ -149,18 +164,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
-    # kirim ke admin
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
         photo=file_id,
         caption=f"""
-📥 NEW MEMBER SUBMISSION 📊
+📥 NEW MEMBER
 
-🆔 USER ID: {data[0]}
-👤 USERNAME: {data[1]}
-🏦 BROKER: {data[2]}
-
-⏳ MENUNGGU VERIFIKASI...
+🆔 {data[0]}
+👤 {data[1]}
+🏦 {data[2]}
 """,
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -171,16 +183,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
 👤 USERNAME TELEGRAM:
-🏦 BROKER YANG DIGUNAKAN:
+🏦 BROKER:
 
-────────────────────
-⚠️ Pastikan data benar ya!
-
-📌 Untuk cek USER ID Telegram:
-👉 https://t.me/caralihatidtele
-
-────────────────────
-💡 Setelah kirim data, tekan tombol konfirmasi."""
+────────────────
+📌 cek ID:
+https://t.me/caralihatidtele"""
     )
 
 
@@ -210,23 +217,25 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
 
     update_user(uid, "status", "waiting_review")
 
+    invite = await get_invite_link(context)
+
     await context.bot.send_message(
         chat_id=uid,
-        text="⏳ Mohon tunggu sebentar...\nKami sedang cek data kamu 🔍"
+        text=f"⏳ CHECK DATA...\n\nTunggu sebentar ya 🔍"
+    )
+
+    await context.bot.send_message(
+        chat_id=uid,
+        text=f"🎉 APPROVED ACCESS READY 🚀\n\n👉 {invite}"
     )
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
-        text=f"""
-📥 MEMBER SUBMITTED
-
-🆔 USER ID: {uid}
-📊 STATUS: WAITING APPROVAL
-"""
+        text=f"📥 USER CONFIRMED: {uid}"
     )
 
 
-# ================= ADMIN ACTION =================
+# ================= ADMIN =================
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -234,32 +243,27 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action, uid = query.data.split("_")
     uid = int(uid)
 
-    if action == "approve":
-
-        invite = await context.bot.create_chat_invite_link(
-            chat_id=MAIN_GROUP,
-            member_limit=1
-        )
-
+    if action == "reject":
         await context.bot.send_message(
             chat_id=uid,
-            text=f"""🎉 SELAMAT BERGABUNG 🚀
-
-🔥 APPROVED!
-
-👉 {invite.invite_link}
-
-💎 Welcome to ONE PERCENT FX"""
+            text="❌ MOHON MAAF REGISTRASI ERROR\nHubungi @ADMOnePercentsFX"
         )
-
     else:
+        invite = await get_invite_link(context)
 
         await context.bot.send_message(
             chat_id=uid,
-            text="❌ MOHON MAAF\n\nRegistrasi kamu ada kesalahan.\nSilahkan hubungi admin: @ADMOnePercentsFX"
+            text=f"""🎉 WELCOME 🚀
+
+👉 {invite}
+
+Selamat bergabung"""
         )
 
-    await query.message.edit_text(f"{action.upper()} DONE")
+    try:
+        await query.message.edit_text(f"{action.upper()} DONE")
+    except:
+        pass
 
 
 # ================= ROUTER =================
@@ -284,13 +288,11 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("member", lambda u,c: u.message.reply_text("Use DB view manually")))
-
     app.add_handler(CallbackQueryHandler(router))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING - FINAL VERSION")
+    logger.info("BOT RUNNING - STABLE MODE")
     app.run_polling()
 
 
