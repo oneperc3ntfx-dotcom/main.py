@@ -24,7 +24,6 @@ GROUPS = {
     "VALETAX": os.getenv("VALETAX_GROUP_LINK"),
 }
 
-# ================= LOGGING =================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -41,8 +40,6 @@ CREATE TABLE IF NOT EXISTS members (
     user_id INTEGER PRIMARY KEY,
     username TEXT,
     broker TEXT,
-    wallet_id TEXT,
-    telegram_id TEXT,
     form TEXT,
     photo TEXT,
     status TEXT,
@@ -52,7 +49,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 conn.commit()
 
-# ================= DB =================
+
 def save_user(user_id, username):
     cursor.execute("""
     INSERT OR IGNORE INTO members (user_id, username, status)
@@ -83,7 +80,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "👋 Selamat datang di ONE PERCENT FX",
+        "👋 Selamat datang di ONE PERCENT FX 🚀",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -100,7 +97,7 @@ async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.message.reply_text(
-        "💡 Pilih broker:",
+        "💡 Pilih broker yang kamu gunakan 👇",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -117,22 +114,33 @@ async def broker_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(user_id, "status", "step_group")
 
     await query.message.reply_text(
-        f"""📌 PINDAH MITRA
+        f"""📌 LANGKAH 1 - PINDAH MITRA 🚀
 
-🔗 {GROUPS[broker]}
+🔗 Silahkan klik link grup di bawah ini:
+{GROUPS[broker]}
 
-📸 Setelah selesai kirim screenshot akun (MT5 / broker)
-yang terlihat SALDO & ID AKUN."""
+📢 Di dalam grup sudah ada panduan lengkap yang wajib kamu ikuti step-by-step.
+
+⚠️ Jangan skip ya, baca semua instruksi dengan teliti!
+
+📸 Setelah selesai:
+Kirim screenshot akun broker / MT5 kamu
+yang terlihat:
+💰 SALDO
+🆔 ID AKUN"""
     )
 
 
-# ================= PHOTO (FIXED SEND TO ADMIN) =================
+# ================= PHOTO =================
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     file_id = update.message.photo[-1].file_id
 
     update_user(user.id, "photo", file_id)
     update_user(user.id, "status", "step_form")
+
+    cursor.execute("SELECT * FROM members WHERE user_id=?", (user.id,))
+    data = cursor.fetchone()
 
     keyboard = [
         [
@@ -141,35 +149,38 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
 
-    cursor.execute("SELECT * FROM members WHERE user_id=?", (user.id,))
-    data = cursor.fetchone()
-
-    # 🔥 SEND PHOTO TO ADMIN + BUTTON
+    # kirim ke admin
     await context.bot.send_photo(
         chat_id=ADMIN_ID,
         photo=file_id,
         caption=f"""
-📥 MEMBER SUBMISSION
+📥 NEW MEMBER SUBMISSION 📊
 
 🆔 USER ID: {data[0]}
 👤 USERNAME: {data[1]}
 🏦 BROKER: {data[2]}
-📊 STATUS: {data[7]}
 
-📌 WAITING VERIFICATION...
+⏳ MENUNGGU VERIFIKASI...
 """,
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     await update.message.reply_text(
-        """📋 LANGKAH 2 - DATA AKHIR
+        """📋 LANGKAH 2 - DATA AKHIR 🚀
 
 💰 ID WALLET BROKER:
 🆔 USER ID TELEGRAM:
 👤 USERNAME TELEGRAM:
 🏦 BROKER YANG DIGUNAKAN:
 
-📌 Kirim data dengan benar ya."""
+────────────────────
+⚠️ Pastikan data benar ya!
+
+📌 Untuk cek USER ID Telegram:
+👉 https://t.me/caralihatidtele
+
+────────────────────
+💡 Setelah kirim data, tekan tombol konfirmasi."""
     )
 
 
@@ -181,9 +192,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(user.id, "status", "pending")
 
     keyboard = [
-        [
-            InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{user.id}")
-        ]
+        [InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{user.id}")]
     ]
 
     await update.message.reply_text(
@@ -203,30 +212,27 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await context.bot.send_message(
         chat_id=uid,
-        text="⏳ MOHON TUNGGU, kami sedang cek data kamu..."
+        text="⏳ Mohon tunggu sebentar...\nKami sedang cek data kamu 🔍"
     )
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=f"""
-📥 NEW MEMBER CONFIRM
+📥 MEMBER SUBMITTED
 
-USER ID: {uid}
-STATUS: WAITING APPROVAL
+🆔 USER ID: {uid}
+📊 STATUS: WAITING APPROVAL
 """
     )
 
 
-# ================= ADMIN ACTION (FIXED) =================
+# ================= ADMIN ACTION =================
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     action, uid = query.data.split("_")
     uid = int(uid)
-
-    cursor.execute("SELECT broker FROM members WHERE user_id=?", (uid,))
-    broker = cursor.fetchone()[0]
 
     if action == "approve":
 
@@ -237,13 +243,13 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await context.bot.send_message(
             chat_id=uid,
-            text=f"""🎉 APPROVED!
+            text=f"""🎉 SELAMAT BERGABUNG 🚀
 
-Selamat bergabung 🚀
+🔥 APPROVED!
 
 👉 {invite.invite_link}
 
-🔥 Welcome to ONE PERCENT FX"""
+💎 Welcome to ONE PERCENT FX"""
         )
 
     else:
@@ -253,7 +259,7 @@ Selamat bergabung 🚀
             text="❌ MOHON MAAF\n\nRegistrasi kamu ada kesalahan.\nSilahkan hubungi admin: @ADMOnePercentsFX"
         )
 
-    await query.message.edit_text(f"Processed: {action.upper()}")
+    await query.message.edit_text(f"{action.upper()} DONE")
 
 
 # ================= ROUTER =================
@@ -273,30 +279,18 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await admin_action(update, context)
 
 
-# ================= MEMBER LIST =================
-async def member_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    members = get_all_members()
-
-    text = "📊 MEMBER LIST\n\n"
-
-    for m in members:
-        text += f"{m[0]} | {m[1]} | {m[2]} | {m[7]}\n"
-
-    await update.message.reply_text(text)
-
-
 # ================= MAIN =================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("member", member_list))
+    app.add_handler(CommandHandler("member", lambda u,c: u.message.reply_text("Use DB view manually")))
 
     app.add_handler(CallbackQueryHandler(router))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("BOT RUNNING - FIXED PRODUCTION MODE")
+    logger.info("BOT RUNNING - FINAL VERSION")
     app.run_polling()
 
 
