@@ -19,7 +19,6 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 MAIN_GROUP = int(os.getenv("MAIN_GROUP_LINK"))
-SIGNAL_GROUP = os.getenv("SIGNAL_GROUP_LINK")
 
 GROUPS = {
     "HFM": os.getenv("HFM_GROUP_LINK"),
@@ -28,9 +27,8 @@ GROUPS = {
 }
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# ================= DATABASE =================
+# ================= DB =================
 conn = sqlite3.connect("members.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -43,17 +41,17 @@ CREATE TABLE IF NOT EXISTS members (
     form TEXT,
     step TEXT,
     status TEXT DEFAULT 'pending',
-    invite_used INTEGER DEFAULT 0
+    invite_used INTEGER DEFAULT 0,
+    flow TEXT DEFAULT 'mitra'
 )
 """)
 conn.commit()
 
 
-# ================= DB =================
 def save_user(uid, username):
     cursor.execute("""
-    INSERT OR IGNORE INTO members (user_id, username, step, status)
-    VALUES (?, ?, 'start', 'pending')
+    INSERT OR IGNORE INTO members (user_id, username, step, status, flow)
+    VALUES (?, ?, 'start', 'pending', 'mitra')
     """, (uid, username))
     conn.commit()
 
@@ -73,36 +71,15 @@ def get_all():
     return cursor.fetchall()
 
 
-# ================= PARSER FORM (FIX UTAMA) =================
-def parse_form(text):
-    data = {
-        "wallet": "-",
-        "telegram_id": "-",
-        "username": "-",
-        "broker": "-"
-    }
-
-    for line in text.split("\n"):
-        line = line.strip()
-
-        if "ID WALLET" in line:
-            data["wallet"] = line.split(":")[-1].strip()
-        elif "USER ID TELEGRAM" in line:
-            data["telegram_id"] = line.split(":")[-1].strip()
-        elif "USERNAME" in line:
-            data["username"] = line.split(":")[-1].strip()
-        elif "BROKER" in line:
-            data["broker"] = line.split(":")[-1].strip()
-
-    return data
-
-
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     save_user(user.id, user.username)
 
-    keyboard = [[InlineKeyboardButton("🤝 JOIN MITRA", callback_data="menu_join")]]
+    keyboard = [
+        [InlineKeyboardButton("🤝 PINDAH MITRA", callback_data="menu_mitra")],
+        [InlineKeyboardButton("📌 SUDAH DAFTAR LINK BIO", callback_data="bio_done")]
+    ]
 
     await update.message.reply_text(
         "🚀 ONE PERCENT FX BOT",
@@ -110,238 +87,99 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ================= MENU =================
-async def menu_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-
-    keyboard = [
-        [InlineKeyboardButton("HFM", callback_data="broker_HFM")],
-        [InlineKeyboardButton("EXNESS", callback_data="broker_EXNESS")],
-        [InlineKeyboardButton("VALETAX", callback_data="broker_VALETAX")],
-    ]
-
-    await q.message.reply_text(
-        "Pilih broker:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-# ================= BROKER =================
-async def broker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-
-    uid = q.from_user.id
-    br = q.data.split("_")[1]
-
-    update_user(uid, "broker", br)
-    update_user(uid, "step", "waiting_photo")
-
-    await q.message.reply_text(f"""
-📌 LANGKAH 1
-
-👉 CARA PINDAH MITRA:
-Silahkan buka link di bawah ini:
-
-🔗 {GROUPS[br]}
-
-📸 Kirim screenshot MT5 (saldo + ID akun)
-""")
-
-
-# ================= PHOTO =================
-async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    file_id = update.message.photo[-1].file_id
-
-    update_user(uid, "photo", file_id)
-    update_user(uid, "step", "waiting_form")
-
-    await update.message.reply_text(f"""
-📋 LANGKAH 2 - DATA AKHIR
-
-💰 ID WALLET BROKER:
-🆔 USER ID TELEGRAM:
-👤 USERNAME TELEGRAM:
-🏦 BROKER:
-
-────────────────────
-📌 https://t.me/caralihatidtele
-
-Kirim sesuai format 👇
-""")
-
-
-# ================= TEXT =================
-async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= RANDOM CHAT HANDLER =================
+async def fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    user = get_user(uid)
-    if not user:
-        return
-
-    if user[5] != "waiting_form":
-        await update.message.reply_text("❌ Klik /start untuk mulai")
-        return
-
-    parsed = parse_form(update.message.text)
-
-    update_user(uid, "form", update.message.text)
-    update_user(uid, "status", "confirm")
-
-    # simpan hasil parse (FIX UTAMA)
-    update_user(uid, "broker", parsed["broker"])
-
-    keyboard = [
-        [InlineKeyboardButton("✅ SAYA SUDAH REGISTRASI", callback_data=f"confirm_{uid}")]
-    ]
+    # tetap simpan user walaupun spam chat
+    save_user(uid, update.effective_user.username)
 
     await update.message.reply_text(
-        "KONFIRMASI DATA",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "❌ SAYA TIDAK MENGERTI\n\nSILAHKAN KLIK /START"
     )
 
 
-# ================= CONFIRM =================
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= ADMIN APPROVE =================
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
     uid = int(q.data.split("_")[1])
-    data = get_user(uid)
+    user = get_user(uid)
 
-    update_user(uid, "status", "pending_admin")
+    expire = datetime.utcnow() + timedelta(minutes=10)
 
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{uid}"),
-            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{uid}")
-        ]
-    ]
-
-    await context.bot.send_photo(
-        ADMIN_ID,
-        photo=data[3],
-        caption=f"📥 NEW MEMBER\n\n{data[4]}",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+    invite = await context.bot.create_chat_invite_link(
+        chat_id=MAIN_GROUP,
+        member_limit=1,
+        expire_date=expire
     )
 
-    await context.bot.send_message(uid, "⏳ WAITING APPROVAL...")
+    update_user(uid, "status", "approved")
+
+    await context.bot.send_message(
+        uid,
+        f"""
+🎉 APPROVED
+
+🔗 LINK JOIN:
+{invite.invite_link}
+
+⏳ EXPIRE 10 MENIT
+"""
+    )
+
+    await q.edit_message_reply_markup(
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ COMPLETED", callback_data="done")]
+        ])
+    )
 
 
-# ================= AUTO REVOKE =================
-async def revoke_later(context: ContextTypes.DEFAULT_TYPE):
-    try:
-        uid = context.job.data["uid"]
-        link = context.job.data["link"]
-
-        await context.bot.revoke_chat_invite_link(
-            chat_id=MAIN_GROUP,
-            invite_link=link
-        )
-    except Exception as e:
-        logger.error(e)
-
-
-# ================= ADMIN =================
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= REJECT =================
+async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    action, uid = q.data.split("_")
-    uid = int(uid)
+    uid = int(q.data.split("_")[1])
 
-    if action == "approve":
+    update_user(uid, "status", "rejected")
 
-        expire = datetime.utcnow() + timedelta(minutes=10)
+    await context.bot.send_message(uid, "❌ REJECTED")
 
-        invite = await context.bot.create_chat_invite_link(
-            chat_id=MAIN_GROUP,
-            member_limit=1,
-            expire_date=expire
-        )
-
-        update_user(uid, "status", "approved")
-        update_user(uid, "invite_used", 1)
-
-        parsed = parse_form(get_user(uid)[4])
-
-        await context.bot.send_message(
-            uid,
-            f"""
-🎉 APPROVED 🚀
-
-💎 1 USER = 1 PRIVATE LINK
-⏳ EXPIRE 10 MENIT
-
-👉 {invite.invite_link}
-
-💰 WALLET: {parsed['wallet']}
-🆔 ID: {parsed['telegram_id']}
-
-🔥 Selamat bergabung
-"""
-        )
-
-        if context.job_queue:
-            context.job_queue.run_once(
-                revoke_later,
-                when=600,
-                data={"uid": uid, "link": invite.invite_link},
-            )
-
-    else:
-        update_user(uid, "status", "rejected")
-
-        await context.bot.send_message(
-            uid,
-            "❌ REJECTED\nHubungi admin"
-        )
-
-    try:
-        await q.message.edit_text("DONE")
-    except:
-        pass
+    await q.edit_message_reply_markup(
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ COMPLETED", callback_data="done")]
+        ])
+    )
 
 
-# ================= MEMBER =================
-async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = get_all()
+# ================= ADMIN ROUTER =================
+async def admin_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = update.callback_query.data
 
-    text = "📊 LIST MEMBER ONE PERCENT FX\n\n"
+    if data.startswith("approve_"):
+        return await approve(update, context)
 
-    for d in data:
-        parsed = parse_form(d[4] or "")
-
-        text += f"""
-💰 ID WALLET: {parsed['wallet']}
-🆔 USER ID: {d[0]}
-👤 USERNAME: {d[1]}
-🏦 BROKER: {parsed['broker']}
-📌 STATUS: {d[6]}
-
-────────────────────
-"""
-
-    await update.message.reply_text(text)
+    if data.startswith("reject_"):
+        return await reject(update, context)
 
 
 # ================= ROUTER =================
 async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = update.callback_query.data
 
-    if d == "menu_join":
-        return await menu_join(update, context)
+    if d == "menu_mitra":
+        return await update.callback_query.message.reply_text("MENU MITRA")
 
-    if d.startswith("broker_"):
-        return await broker(update, context)
-
-    if d.startswith("confirm_"):
-        return await confirm(update, context)
+    if d == "bio_done":
+        return await update.callback_query.message.reply_text("MENU BIO")
 
     if d.startswith("approve") or d.startswith("reject"):
-        return await admin(update, context)
+        return await admin_router(update, context)
+
+    if d == "done":
+        return await update.callback_query.answer("SUDAH SELESAI", show_alert=True)
 
 
 # ================= MAIN =================
@@ -349,13 +187,13 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("member", member))
 
     app.add_handler(CallbackQueryHandler(router))
-    app.add_handler(MessageHandler(filters.PHOTO, photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
+    app.add_handler(CallbackQueryHandler(admin_router))
 
-    logger.info("BOT FINAL STABLE RUNNING")
+    # fallback chat random
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback))
+
     app.run_polling()
 
 
