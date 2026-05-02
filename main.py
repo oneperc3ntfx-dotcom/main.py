@@ -56,6 +56,7 @@ conn.commit()
 
 # ================= DB =================
 def save_user(uid, username):
+
     cursor.execute("""
     INSERT OR IGNORE INTO members (
         user_id,
@@ -65,28 +66,36 @@ def save_user(uid, username):
     )
     VALUES (?, ?, 'start', 'pending')
     """, (uid, username))
+
     conn.commit()
 
 def update_user(uid, field, value):
+
     cursor.execute(
         f"UPDATE members SET {field}=? WHERE user_id=?",
         (value, uid)
     )
+
     conn.commit()
 
 def get_user(uid):
+
     cursor.execute(
         "SELECT * FROM members WHERE user_id=?",
         (uid,)
     )
+
     return cursor.fetchone()
 
 def get_all():
+
     cursor.execute("SELECT * FROM members")
+
     return cursor.fetchall()
 
 # ================= PARSE FORM =================
 def parse_form(text):
+
     data = {
         "wallet": "-",
         "telegram_id": "-",
@@ -120,6 +129,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user(user.id, user.username)
 
     update_user(user.id, "step", "start")
+    update_user(user.id, "form_sent", 0)
 
     keyboard = [
         [
@@ -234,15 +244,19 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(uid)
 
     if not user:
+
         await update.message.reply_text(
             "❌ Silahkan klik /start terlebih dahulu"
         )
+
         return
 
     if user[5] != "waiting_photo":
+
         await update.message.reply_text(
             "❌ Saya tidak mengerti.\nSilahkan klik /start"
         )
+
         return
 
     file_id = update.message.photo[-1].file_id
@@ -281,9 +295,11 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # anti kirim form 2x
     if user[9] == 1:
+
         await update.message.reply_text(
             "❌ Form sudah dikirim.\nSilahkan klik /start untuk mengulang percakapan"
         )
+
         return
 
     text = update.message.text
@@ -295,7 +311,7 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         and "BROKER" in text
     )
 
-    # jika bukan form -> abaikan disini
+    # jika bukan form
     if not valid_form:
         return
 
@@ -306,6 +322,9 @@ async def form_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_user(uid, "status", "confirm")
     update_user(uid, "step", "done")
     update_user(uid, "form_sent", 1)
+
+    # FIX AGAR INVALID_MESSAGE TIDAK IKUT JALAN
+    context.user_data["skip_invalid"] = True
 
     keyboard = [
         [
@@ -401,7 +420,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_date=expire
         )
 
-        # simpan data hanya setelah approve
         update_user(uid, "status", "approved")
         update_user(uid, "invite_used", 1)
 
@@ -495,14 +513,22 @@ async def member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= INVALID CHAT =================
 async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    # FIX AGAR TIDAK DOBEL PESAN
+    if context.user_data.get("skip_invalid"):
+
+        context.user_data["skip_invalid"] = False
+        return
+
     uid = update.effective_user.id
 
     user = get_user(uid)
 
     if not user:
+
         await update.message.reply_text(
             "❌ Saya tidak mengerti.\nSilahkan klik /start untuk memulai"
         )
+
         return
 
     # jika sudah selesai
@@ -511,6 +537,7 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Saya tidak mengerti.\nSilahkan klik /start untuk memulai"
         )
+
         return
 
     # waiting photo
@@ -519,6 +546,7 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📸 Silahkan kirim screenshot profil broker / MT5 yang terlihat saldo nya"
         )
+
         return
 
     # waiting form
@@ -533,7 +561,7 @@ async def invalid_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             and "BROKER" in text
         )
 
-        # jika form valid -> jangan kirim pesan invalid
+        # jika form valid jangan kirim invalid
         if valid_form:
             return
 
@@ -552,6 +580,7 @@ https://t.me/caralihatidtele
 
 Kirim sesuai format 👇
 """)
+
         return
 
     await update.message.reply_text(
